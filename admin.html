@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MPay Master Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-6">
+    <div class="max-w-6xl mx-auto flex flex-col gap-6">
+        
+        <!-- Заголовок -->
+        <div class="flex justify-between items-center bg-slate-900 p-6 rounded-3xl border border-slate-800">
+            <div>
+                <h1 class="text-2xl font-bold text-amber-400">MPay Central Command</h1>
+                <p class="text-xs text-slate-400">Панель управления базами данных Терминалов и Карт</p>
+            </div>
+            <button onclick="refreshAllData()" class="px-5 py-3 bg-amber-600 hover:bg-amber-500 font-bold rounded-2xl text-sm">Обновить все данные</button>
+        </div>
+
+        <!-- 2 Базы данных -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            <!-- База 1: ТЕРМИНАЛЫ -->
+            <div class="bg-slate-900/90 p-6 rounded-3xl border border-slate-800 flex flex-col gap-4">
+                <h2 class="text-lg font-bold text-blue-400 flex justify-between items-center">
+                    <span>База Терминалов</span>
+                    <span id="terminals-count" class="text-xs bg-blue-500/20 text-blue-300 px-2 py-1 rounded-full">0</span>
+                </h2>
+                <div id="terminals-list" class="flex flex-col gap-3 max-h-96 overflow-y-auto">
+                    <div class="text-xs text-slate-500 text-center py-4">Нажмите "Обновить данные"</div>
+                </div>
+            </div>
+
+            <!-- База 2: КАРТЫ -->
+            <div class="bg-slate-900/90 p-6 rounded-3xl border border-slate-800 flex flex-col gap-4">
+                <h2 class="text-lg font-bold text-emerald-400 flex justify-between items-center">
+                    <span>База Клиентских Карт</span>
+                    <span id="cards-count" class="text-xs bg-emerald-500/20 text-emerald-300 px-2 py-1 rounded-full">0</span>
+                </h2>
+                <div id="cards-list" class="flex flex-col gap-3 max-h-96 overflow-y-auto">
+                    <div class="text-xs text-slate-500 text-center py-4">Нажмите "Обновить данные"</div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        const DB_CONFIG = { owner: "YOUR_GITHUB_USERNAME", repo: "mpay-database", token: "YOUR_GITHUB_TOKEN" };
+
+        async function refreshAllData() {
+            loadTerminals();
+            loadCards();
+        }
+
+        async function loadTerminals() {
+            const listEl = document.getElementById('terminals-list');
+            listEl.innerHTML = "<div class='text-xs text-slate-400'>Загрузка терминалов...</div>";
+            const files = await fetchFolderContents("terminals");
+
+            document.getElementById('terminals-count').innerText = files.length;
+            listEl.innerHTML = "";
+
+            for (let f of files) {
+                const item = await fetchGithubFile(f.path);
+                if (!item) continue;
+                const t = item.content;
+
+                const card = document.createElement('div');
+                card.className = "bg-slate-950 p-4 rounded-2xl border border-slate-800 flex justify-between items-center";
+                card.innerHTML = `
+                    <div>
+                        <div class="font-bold text-sm">${t.owner} <span class="text-xs text-slate-500">(${t.id})</span></div>
+                        <div class="text-xs text-slate-400">${t.purpose}</div>
+                    </div>
+                    <button onclick="toggleBlockTerminal('${f.path}', ${!t.isBlocked}, '${item.sha}')" class="px-3 py-1 text-xs font-bold rounded-xl ${t.isBlocked ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-rose-600 hover:bg-rose-500'}">
+                        ${t.isBlocked ? 'Разблокировать' : 'Заблокировать'}
+                    </button>
+                `;
+                listEl.appendChild(card);
+            }
+        }
+
+        async function loadCards() {
+            const listEl = document.getElementById('cards-list');
+            listEl.innerHTML = "<div class='text-xs text-slate-400'>Загрузка карт...</div>";
+            const files = await fetchFolderContents("cards");
+
+            document.getElementById('cards-count').innerText = files.length;
+            listEl.innerHTML = "";
+
+            for (let f of files) {
+                const item = await fetchGithubFile(f.path);
+                if (!item) continue;
+                const c = item.content;
+                const cardNum = f.name.replace('.json', '');
+
+                const card = document.createElement('div');
+                card.className = "bg-slate-950 p-4 rounded-2xl border border-slate-800 flex flex-col gap-2";
+                card.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="font-bold text-sm text-emerald-400">${cardNum}</div>
+                            <div class="text-xs text-slate-400">UID: ${c.uid || 'Н/Д'} | Баланс: <b class="text-white">${c.balance} EGP</b></div>
+                            <div class="text-xs text-amber-400 font-mono">Секретный ПИН (Админ): ${c.rawPin || 'Неизвестно'}</div>
+                        </div>
+                        <span class="text-xs px-2 py-0.5 rounded-full ${c.isBlocked ? 'bg-rose-500/20 text-rose-400' : (c.frozenByClient ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400')}">
+                            ${c.isBlocked ? 'Заблокирована' : (c.frozenByClient ? 'Заморожена клиентом' : 'Активна')}
+                        </span>
+                    </div>
+                    <div class="flex gap-2 mt-1">
+                        <button onclick="toggleCardStatus('${f.path}', 'isBlocked', ${!c.isBlocked}, '${item.sha}')" class="flex-1 py-1 text-xs font-bold rounded-lg ${c.isBlocked ? 'bg-emerald-600' : 'bg-rose-600'}">
+                            ${c.isBlocked ? 'Разблокировать' : 'Заблокировать'}
+                        </button>
+                        <button onclick="toggleCardStatus('${f.path}', 'frozenByClient', ${!c.frozenByClient}, '${item.sha}')" class="flex-1 py-1 text-xs font-bold rounded-lg ${c.frozenByClient ? 'bg-emerald-600' : 'bg-amber-600'}">
+                            ${c.frozenByClient ? 'Разморозить' : 'Заморозить'}
+                        </button>
+                    </div>
+                `;
+                listEl.appendChild(card);
+            }
+        }
+
+        async function toggleBlockTerminal(path, newStatus, sha) {
+            const item = await fetchGithubFile(path);
+            item.content.isBlocked = newStatus;
+            await updateGithubFile(path, item.content, sha);
+            loadTerminals();
+        }
+
+        async function toggleCardStatus(path, field, newStatus, sha) {
+            const item = await fetchGithubFile(path);
+            item.content[field] = newStatus;
+            await updateGithubFile(path, item.content, sha);
+            loadCards();
+        }
+
+        async function fetchFolderContents(folder) {
+            try {
+                const res = await fetch(`https://api.github.com/repos/${DB_CONFIG.owner}/${DB_CONFIG.repo}/contents/${folder}`, {
+                    headers: { "Authorization": `token ${DB_CONFIG.token}` }
+                });
+                return res.status === 200 ? await res.json() : [];
+            } catch (e) { return []; }
+        }
+
+        async function fetchGithubFile(path) {
+            try {
+                const res = await fetch(`https://api.github.com/repos/${DB_CONFIG.owner}/${DB_CONFIG.repo}/contents/${path}`, {
+                    headers: { "Authorization": `token ${DB_CONFIG.token}` }
+                });
+                if (res.status !== 200) return null;
+                const json = await res.json();
+                return { content: JSON.parse(atob(json.content)), sha: json.sha };
+            } catch (e) { return null; }
+        }
+
+        async function updateGithubFile(path, contentObj, sha) {
+            try {
+                const body = { message: "Admin state update", content: btoa(JSON.stringify(contentObj, null, 2)), sha };
+                const res = await fetch(`https://api.github.com/repos/${DB_CONFIG.owner}/${DB_CONFIG.repo}/contents/${path}`, {
+                    method: "PUT",
+                    headers: { "Authorization": `token ${DB_CONFIG.token}`, "Content-Type": "application/json" },
+                    body: JSON.stringify(body)
+                });
+                return res.status === 200 || res.status === 201;
+            } catch (e) { return false; }
+        }
+    </script>
+</body>
+</html>
