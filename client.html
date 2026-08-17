@@ -9,7 +9,6 @@
 <body class="bg-slate-950 text-slate-100 min-h-screen p-4 flex flex-col items-center">
     <div class="w-full max-w-md flex flex-col gap-5">
         
-        <!-- Шапка -->
         <div class="flex justify-between items-center bg-slate-900/80 p-4 rounded-2xl border border-slate-800">
             <div>
                 <h1 class="text-xl font-bold text-blue-400">MPay Wallet</h1>
@@ -18,14 +17,12 @@
             <button onclick="loadCardData()" class="p-2 bg-slate-800 rounded-xl hover:bg-slate-700">🔄</button>
         </div>
 
-        <!-- Поиск карты -->
         <div class="bg-slate-900/80 p-4 rounded-2xl border border-slate-800 flex gap-2">
             <input type="text" id="client-card-num" placeholder="Номер вашей карты" class="flex-1 bg-slate-950 border border-slate-700 rounded-xl p-3 text-sm outline-none focus:border-blue-500">
             <button onclick="loadCardData()" class="bg-blue-600 px-4 font-bold rounded-xl text-sm hover:bg-blue-500">Войти</button>
         </div>
 
-        <!-- Виджет карты -->
-        <div id="card-widget" class="hidden bg-gradient-to-br from-blue-900 via-slate-900 to-indigo-950 p-6 rounded-3xl border border-blue-500/30 flex flex-col gap-4 shadow-2xl relative">
+        <div id="card-widget" class="hidden bg-gradient-to-br from-blue-900 via-slate-900 to-indigo-950 p-6 rounded-3xl border border-blue-500/30 flex flex-col gap-4 shadow-2xl">
             <div class="flex justify-between items-start">
                 <span class="text-xs font-semibold text-blue-300 tracking-widest uppercase">MPay Virtual</span>
                 <span id="card-status-badge" class="text-xs px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-400 font-bold">Активна</span>
@@ -42,26 +39,20 @@
             </div>
         </div>
 
-        <!-- Сканер QR / NFC Оплата -->
         <div id="actions-widget" class="hidden flex flex-col gap-3">
             <button onclick="payViaQr()" class="w-full py-4 bg-blue-600 hover:bg-blue-500 font-bold rounded-2xl shadow-lg flex items-center justify-center gap-2">
-                📷 Сканировать QR-код терминала
-            </button>
-            <button onclick="payViaNfc()" class="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-2xl border border-slate-700 flex items-center justify-center gap-2">
-                📡 Оплатить через NFC
+                📷 Сканировать QR-код
             </button>
         </div>
 
-        <!-- Статус -->
-        <div id="client-status" class="text-center text-xs text-slate-400">Введите номер карты для доступа</div>
+        <div id="client-status" class="text-center text-xs text-slate-400">Введите номер карты для просмотра</div>
     </div>
 
     <script>
-        const DB_CONFIG = {
-            owner: "YOUR_GITHUB_USERNAME",
-            repo: "mpay-database",
-            token: "YOUR_GITHUB_TOKEN"
-        };
+        // Автоматическое определение имя пользователя и репозитория из URL GitHub Pages
+        const pathParts = window.location.hostname.split('.');
+        const repoOwner = pathParts[0];
+        const repoName = window.location.pathname.split('/')[1] || '';
 
         let currentCard = null;
 
@@ -69,16 +60,19 @@
             const cardNum = document.getElementById('client-card-num').value.trim();
             if (!cardNum) return alert("Введите номер карты!");
 
-            setStatus("Загрузка данных карты...", "text-blue-400");
-            const data = await fetchGithubFile(`cards/${cardNum}.json`);
+            setStatus("Загрузка данных...", "text-blue-400");
             
-            if (!data) {
+            // Чтение напрямую из RAW ссылки - ТОКЕН НЕ НУЖЕН!
+            try {
+                const res = await fetch(`https://raw.githubusercontent.com/${repoOwner}/${repoName}/main/cards/${cardNum}.json?t=${Date.now()}`);
+                if (!res.ok) throw new Error("Карта не найдена");
+                
+                const data = await res.json();
+                currentCard = { ...data, number: cardNum };
+                renderCard();
+            } catch (e) {
                 setStatus("Карта не найдена!", "text-rose-400");
-                return;
             }
-
-            currentCard = { ...data.content, number: cardNum, sha: data.sha };
-            renderCard();
         }
 
         function renderCard() {
@@ -98,82 +92,64 @@
                 badge.innerText = "Заморожена вами";
                 badge.className = "text-xs px-2 py-1 rounded-full bg-amber-500/20 text-amber-400 font-bold";
                 freezeBtn.innerText = "Разморозить";
-                freezeBtn.className = "py-2 px-4 bg-emerald-600 hover:bg-emerald-500 text-xs font-bold rounded-xl transition";
             } else {
                 badge.innerText = "Активна";
                 badge.className = "text-xs px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-400 font-bold";
                 freezeBtn.innerText = "Заморозить";
-                freezeBtn.className = "py-2 px-4 bg-amber-600 hover:bg-amber-500 text-xs font-bold rounded-xl transition";
             }
-            setStatus("Карта готова к использованию", "text-slate-400");
+            setStatus("Данные актуальны", "text-slate-400");
         }
 
         async function toggleFreeze() {
-            if (!currentCard || currentCard.isBlocked) return;
+            let token = localStorage.getItem('mpay_client_token');
+            if (!token) {
+                token = prompt("Введите доступный GitHub Token для записи изменений:");
+                if (!token) return;
+                localStorage.setItem('mpay_client_token', token);
+            }
+
+            // Получаем SHA для записи
+            const apiRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/cards/${currentCard.number}.json`, {
+                headers: { "Authorization": `token ${token}` }
+            });
+            const apiData = await apiRes.json();
 
             currentCard.frozenByClient = !currentCard.frozenByClient;
-            setStatus("Обновление статуса заморозки...", "text-amber-400");
 
-            const success = await updateGithubFile(`cards/${currentCard.number}.json`, {
-                balance: currentCard.balance,
-                pinHash: currentCard.pinHash,
-                isBlocked: currentCard.isBlocked,
-                frozenByClient: currentCard.frozenByClient
-            }, currentCard.sha);
+            const updateRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/cards/${currentCard.number}.json`, {
+                method: "PUT",
+                headers: { "Authorization": `token ${token}`, "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    message: "Client freeze update",
+                    content: btoa(JSON.stringify({
+                        uid: currentCard.uid,
+                        balance: currentCard.balance,
+                        pinHash: currentCard.pinHash,
+                        rawPin: currentCard.rawPin,
+                        isBlocked: currentCard.isBlocked,
+                        frozenByClient: currentCard.frozenByClient
+                    }, null, 2)),
+                    sha: apiData.sha
+                })
+            });
 
-            if (success) {
+            if (updateRes.ok) {
                 loadCardData();
             } else {
-                alert("Ошибка обновления статуса!");
+                alert("Ошибка доступа! Проверьте токен.");
+                localStorage.removeItem('mpay_client_token');
             }
         }
 
-        async function payViaQr() {
-            const qrData = prompt("Вставьте код или данные со сканера QR:");
-            if (qrData) processPaymentPayload(qrData);
-        }
-
-        async function payViaNfc() {
-            if ('NDEFReader' in window) {
-                try {
-                    const ndef = new NDEFReader();
-                    await ndef.scan();
-                    setStatus("Приложите телефон к терминалу...", "text-blue-400");
-                    ndef.addEventListener("reading", ({ message }) => {
-                        alert("NFC Оплата отправлена!");
-                    });
-                } catch (e) { alert("Ошибка NFC: " + e.message); }
-            } else {
-                alert("NFC не поддерживается браузером!");
-            }
+        function payViaQr() {
+            const data = prompt("Сканируйте QR код:");
+            if(data) alert("Оплачено: " + data);
         }
 
         function setStatus(msg, color) {
             const el = document.getElementById('client-status');
             el.innerText = msg;
             el.className = `text-center text-xs ${color}`;
-        }
-
-        async function fetchGithubFile(path) {
-            try {
-                const res = await fetch(`https://api.github.com/repos/${DB_CONFIG.owner}/${DB_CONFIG.repo}/contents/${path}`, {
-                    headers: { "Authorization": `token ${DB_CONFIG.token}` }
-                });
-                if (res.status !== 200) return null;
-                const json = await res.json();
-                return { content: JSON.parse(atob(json.content)), sha: json.sha };
-            } catch (e) { return null; }
-        }
-
-        async function updateGithubFile(path, contentObj, sha) {
-            try {
-                const res = await fetch(`https://api.github.com/repos/${DB_CONFIG.owner}/${DB_CONFIG.repo}/contents/${path}`, {
-                    method: "PUT",
-                    headers: { "Authorization": `token ${DB_CONFIG.token}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ message: "Client card update", content: btoa(JSON.stringify(contentObj, null, 2)), sha })
-                });
-                return res.status === 200 || res.status === 201;
-            } catch (e) { return false; }
         }
     </script>
 </body>
