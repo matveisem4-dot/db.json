@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MPay Terminal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-4 flex flex-col items-center">
+
+    <!-- Экран 1: Регистрация Терминала -->
+    <div id="screen-register" class="w-full max-w-md bg-slate-900/90 p-6 rounded-3xl border border-slate-800 flex flex-col gap-4">
+        <h2 class="text-xl font-bold text-blue-400">Регистрация Терминала</h2>
+        <input type="text" id="reg-name" placeholder="Имя владельца / Название точки" class="w-full p-3 bg-slate-950 border border-slate-700 rounded-xl text-sm outline-none focus:border-blue-500">
+        <textarea id="reg-purpose" placeholder="Для чего нужен терминал?" class="w-full p-3 bg-slate-950 border border-slate-700 rounded-xl text-sm outline-none focus:border-blue-500 h-24"></textarea>
+        <button onclick="registerTerminal()" class="w-full py-3 bg-blue-600 font-bold rounded-xl hover:bg-blue-500 transition">Зарегистрировать</button>
+        <p class="text-xs text-center text-slate-500">Для быстрого входа разработчика наберите <span class="text-amber-400 font-bold">777</span> на клавиатуре ниже.</p>
+    </div>
+
+    <!-- Экран 2: Рабочий Терминал -->
+    <div id="screen-terminal" class="w-full max-w-md flex flex-col gap-4 hidden">
+        
+        <!-- Верхняя панель -->
+        <div class="flex justify-between items-center bg-slate-900/80 p-4 rounded-2xl border border-slate-800 relative">
+            <div>
+                <h1 id="terminal-title" class="text-lg font-bold text-emerald-400">Терминал MPay</h1>
+                <p id="terminal-subtitle" class="text-xs text-slate-400">Готов к приему оплаты</p>
+            </div>
+            
+            <!-- Меню "3 точки" -->
+            <div class="relative">
+                <button onclick="toggleMenu()" class="text-2xl p-2 text-slate-400 hover:text-white">⋮</button>
+                <div id="dropdown-menu" class="hidden absolute right-0 mt-2 w-48 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 flex flex-col">
+                    <button onclick="openAddCardModal()" class="p-3 text-left text-sm hover:bg-slate-800 rounded-t-xl">💳 Выпустить карту</button>
+                    <button onclick="openTopUpModal()" class="p-3 text-left text-sm hover:bg-slate-800 rounded-b-xl">💵 Пополнить карту</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Дисплей суммы -->
+        <div class="bg-slate-900/80 p-6 rounded-3xl border border-slate-800 text-center">
+            <span class="text-xs text-slate-400 uppercase tracking-widest">Сумма заказа</span>
+            <div class="text-5xl font-extrabold my-2"><span id="term-amount">0</span> <span class="text-2xl text-blue-400">EGP</span></div>
+            <div id="term-status" class="text-xs text-blue-400 font-medium">Введите сумму</div>
+        </div>
+
+        <!-- Цифровая клавиатура -->
+        <div class="grid grid-cols-3 gap-3 bg-slate-900/80 p-4 rounded-3xl border border-slate-800">
+            <button onclick="press('1')" class="py-4 text-2xl font-bold bg-slate-800 rounded-2xl hover:bg-slate-700">1</button>
+            <button onclick="press('2')" class="py-4 text-2xl font-bold bg-slate-800 rounded-2xl hover:bg-slate-700">2</button>
+            <button onclick="press('3')" class="py-4 text-2xl font-bold bg-slate-800 rounded-2xl hover:bg-slate-700">3</button>
+            <button onclick="press('4')" class="py-4 text-2xl font-bold bg-slate-800 rounded-2xl hover:bg-slate-700">4</button>
+            <button onclick="press('5')" class="py-4 text-2xl font-bold bg-slate-800 rounded-2xl hover:bg-slate-700">5</button>
+            <button onclick="press('6')" class="py-4 text-2xl font-bold bg-slate-800 rounded-2xl hover:bg-slate-700">6</button>
+            <button onclick="press('7')" class="py-4 text-2xl font-bold bg-slate-800 rounded-2xl hover:bg-slate-700">7</button>
+            <button onclick="press('8')" class="py-4 text-2xl font-bold bg-slate-800 rounded-2xl hover:bg-slate-700">8</button>
+            <button onclick="press('9')" class="py-4 text-2xl font-bold bg-slate-800 rounded-2xl hover:bg-slate-700">9</button>
+            <button onclick="clearAmount()" class="py-4 text-lg font-bold bg-rose-950/60 text-rose-400 rounded-2xl hover:bg-rose-900/80">C</button>
+            <button onclick="press('0')" class="py-4 text-2xl font-bold bg-slate-800 rounded-2xl hover:bg-slate-700">0</button>
+            <button onclick="press('.')" class="py-4 text-2xl font-bold bg-slate-800 rounded-2xl hover:bg-slate-700">.</button>
+        </div>
+
+        <!-- Кнопки Оплаты -->
+        <div class="flex gap-3">
+            <button onclick="generateQrPayment()" class="flex-1 py-4 bg-indigo-600 hover:bg-indigo-500 font-bold rounded-2xl">QR-код</button>
+            <button onclick="startNfcRead()" class="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 font-bold rounded-2xl">NFC Оплата</button>
+        </div>
+    </div>
+
+    <!-- Модальное окно QR -->
+    <div id="modal-qr" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 hidden z-50">
+        <div class="bg-slate-900 border border-slate-700 p-6 rounded-3xl flex flex-col items-center gap-4">
+            <h3 class="text-lg font-bold">Сканируйте для оплаты</h3>
+            <div id="qrcode" class="p-4 bg-white rounded-2xl"></div>
+            <button onclick="closeQrModal()" class="w-full py-2 bg-slate-800 rounded-xl font-bold">Закрыть</button>
+        </div>
+    </div>
+
+    <!-- Модальное окно: Выпуск карты -->
+    <div id="modal-add-card" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 hidden z-50">
+        <div class="bg-slate-900 border border-slate-700 p-6 rounded-3xl w-full max-w-sm flex flex-col gap-3">
+            <h3 class="text-lg font-bold text-emerald-400">Выпустить карту</h3>
+            <input type="text" id="new-uid" placeholder="NFC UID (сканируйте или введите)" class="p-3 bg-slate-950 border border-slate-700 rounded-xl text-sm outline-none">
+            <input type="text" id="new-card-num" placeholder="Придумайте номер карты" class="p-3 bg-slate-950 border border-slate-700 rounded-xl text-sm outline-none">
+            <p class="text-xs text-slate-400">ПИН-код будет сгенерирован автоматически системой.</p>
+            <div class="flex gap-2">
+                <button onclick="closeModal('modal-add-card')" class="flex-1 py-3 bg-slate-800 rounded-xl font-bold">Отмена</button>
+                <button onclick="createCardSubmit()" class="flex-1 py-3 bg-emerald-600 rounded-xl font-bold">Создать</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно: Пополнение -->
+    <div id="modal-topup" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 hidden z-50">
+        <div class="bg-slate-900 border border-slate-700 p-6 rounded-3xl w-full max-w-sm flex flex-col gap-3">
+            <h3 class="text-lg font-bold text-blue-400">Пополнить баланс</h3>
+            <input type="text" id="topup-card-num" placeholder="Номер карты" class="p-3 bg-slate-950 border border-slate-700 rounded-xl text-sm outline-none">
+            <input type="number" id="topup-amount" placeholder="Сумма пополнения (EGP)" class="p-3 bg-slate-950 border border-slate-700 rounded-xl text-sm outline-none">
+            <div class="flex gap-2">
+                <button onclick="closeModal('modal-topup')" class="flex-1 py-3 bg-slate-800 rounded-xl font-bold">Отмена</button>
+                <button onclick="submitTopUp()" class="flex-1 py-3 bg-blue-600 rounded-xl font-bold">Пополнить</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const DB_CONFIG = { owner: "YOUR_GITHUB_USERNAME", repo: "mpay-database", token: "YOUR_GITHUB_TOKEN" };
+        let currentInput = "0";
+        let secretBuffer = "";
+
+        // Секретная комбинация для разработчика (Код 777)
+        function checkSecretBypass(num) {
+            secretBuffer += num;
+            if (secretBuffer.endsWith("777")) {
+                alert("Привет, Разработчик! Авторизация обойдена.");
+                openTerminalView("Режим Разработчика", "Админ-Доступ");
+                secretBuffer = "";
+            }
+        }
+
+        function press(num) {
+            checkSecretBypass(num);
+            if (currentInput === "0" && num !== ".") currentInput = "";
+            currentInput += num;
+            document.getElementById('term-amount').innerText = currentInput;
+        }
+
+        function clearAmount() {
+            currentInput = "0";
+            document.getElementById('term-amount').innerText = currentInput;
+        }
+
+        function toggleMenu() {
+            document.getElementById('dropdown-menu').classList.toggle('hidden');
+        }
+
+        async function registerTerminal() {
+            const name = document.getElementById('reg-name').value.trim();
+            const purpose = document.getElementById('reg-purpose').value.trim();
+            if (!name || !purpose) return alert("Заполните все поля!");
+
+            const termId = "TERM_" + Math.floor(100000 + Math.random() * 900000);
+            const data = { id: termId, owner: name, purpose: purpose, status: "active" };
+
+            const success = await updateGithubFile(`terminals/${termId}.json`, data, null);
+            if (success) {
+                openTerminalView(name, termId);
+            } else alert("Ошибка регистрации!");
+        }
+
+        function openTerminalView(name, id) {
+            document.getElementById('screen-register').classList.add('hidden');
+            document.getElementById('screen-terminal').classList.remove('hidden');
+            document.getElementById('terminal-title').innerText = name;
+            document.getElementById('terminal-subtitle').innerText = "ID: " + id;
+        }
+
+        function generateQrPayment() {
+            const amount = parseFloat(currentInput);
+            if (amount <= 0) return alert("Введите сумму!");
+            
+            document.getElementById('qrcode').innerHTML = "";
+            new QRCode(document.getElementById('qrcode'), {
+                text: JSON.stringify({ amount: amount, timestamp: Date.now() }),
+                width: 180, height: 180
+            });
+            document.getElementById('modal-qr').classList.remove('hidden');
+        }
+
+        function closeQrModal() { document.getElementById('modal-qr').classList.add('hidden'); }
+        function openAddCardModal() { toggleMenu(); document.getElementById('modal-add-card').classList.remove('hidden'); }
+        function openTopUpModal() { toggleMenu(); document.getElementById('modal-topup').classList.remove('hidden'); }
+        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+        async function createCardSubmit() {
+            const uid = document.getElementById('new-uid').value.trim();
+            const cardNum = document.getElementById('new-card-num').value.trim();
+            if (!uid || !cardNum) return alert("Заполните поля!");
+
+            const randomPin = Math.floor(1000 + Math.random() * 9000).toString();
+            const pinHash = await hashSha256(randomPin);
+
+            const cardObj = {
+                uid: uid,
+                balance: 0,
+                pinHash: pinHash,
+                rawPin: randomPin, // Сохраняется для просмотра только Админом
+                isBlocked: false,
+                frozenByClient: false
+            };
+
+            const success = await updateGithubFile(`cards/${cardNum}.json`, cardObj, null);
+            if (success) {
+                alert(`Карта ${cardNum} создана!\nБаланс: 0 EGP\nПИН-код сгенерирован автоматически.`);
+                closeModal('modal-add-card');
+            } else alert("Ошибка создания карты!");
+        }
+
+        async function submitTopUp() {
+            const cardNum = document.getElementById('topup-card-num').value.trim();
+            const amount = parseFloat(document.getElementById('topup-amount').value);
+            if (!cardNum || isNaN(amount) || amount <= 0) return alert("Введите корректные данные!");
+
+            const existing = await fetchGithubFile(`cards/${cardNum}.json`);
+            if (!existing) return alert("Карта не найдена!");
+
+            existing.content.balance += amount;
+            const success = await updateGithubFile(`cards/${cardNum}.json`, existing.content, existing.sha);
+            if (success) {
+                alert(`Баланс карты ${cardNum} пополнен на ${amount} EGP! Новый баланс: ${existing.content.balance} EGP`);
+                closeModal('modal-topup');
+            } else alert("Ошибка пополнения!");
+        }
+
+        async function hashSha256(input) {
+            const buffer = new TextEncoder().encode(input);
+            const hash = await crypto.subtle.digest('SHA-256', buffer);
+            return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        async function fetchGithubFile(path) {
+            try {
+                const res = await fetch(`https://api.github.com/repos/${DB_CONFIG.owner}/${DB_CONFIG.repo}/contents/${path}`, {
+                    headers: { "Authorization": `token ${DB_CONFIG.token}` }
+                });
+                if (res.status !== 200) return null;
+                const json = await res.json();
+                return { content: JSON.parse(atob(json.content)), sha: json.sha };
+            } catch (e) { return null; }
+        }
+
+        async function updateGithubFile(path, contentObj, sha) {
+            try {
+                const body = { message: "Terminal update", content: btoa(JSON.stringify(contentObj, null, 2)) };
+                if (sha) body.sha = sha;
+                const res = await fetch(`https://api.github.com/repos/${DB_CONFIG.owner}/${DB_CONFIG.repo}/contents/${path}`, {
+                    method: "PUT",
+                    headers: { "Authorization": `token ${DB_CONFIG.token}`, "Content-Type": "application/json" },
+                    body: JSON.stringify(body)
+                });
+                return res.status === 200 || res.status === 201;
+            } catch (e) { return false; }
+        }
+    </script>
+</body>
+</html>
